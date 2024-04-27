@@ -164,3 +164,5 @@ def inspect_image_dataset(dataset, num_samples=3):
         # plt.imshow(full_image, cmap='gray')
         # plt.show()
     print('Total samples:', count)
+
+# inspect_image_dataset(make_dataset('../data/raw', 128), 100000)
