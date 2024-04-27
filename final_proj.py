@@ -6,6 +6,8 @@ import tensorflow as tf
 import numpy as np
 import random
 import math
+from code.preprocess_images import load_data
+import time
 
 # ensures that we run only on cpu
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -24,20 +26,20 @@ class Model(tf.keras.Model):
         self.loss_list = [] # Append losses to this list in training so you can visualize loss vs time in main
 
         # TODO: Initialize all hyperparameters
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate = .001)
+        # self.optimizer = tf.keras.optimizers.Adam(learning_rate = .001)
         # TODO: Initialize all trainable parameters
-        CNN1 = tf.Variable(tf.random.truncated_normal([5,5,3,16], stddev=0.1))
-        CBias1 = tf.Variable(tf.zeros(16))
-        CNN2 = tf.Variable(tf.random.truncated_normal([8,8,16,20], stddev=0.1))
-        CBias2 = tf.Variable(tf.zeros(20))
-        CNN3 = tf.Variable(tf.random.truncated_normal([8,8,20,20], stddev=0.1))
-        CBias3 = tf.Variable(tf.zeros(20))
-        CNN4 = tf.Variable(tf.random.truncated_normal([4,4,20,80], stddev=0.1))
-        CBias3 = tf.Variable(tf.zeros(20))
+        
+        #CNN1 = tf.Variable(tf.random.truncated_normal([5,5,3,16], stddev=0.1))
+        #CBias1 = tf.Variable(tf.zeros(16))
+        #CNN2 = tf.Variable(tf.random.truncated_normal([8,8,16,20], stddev=0.1))
+        #CBias2 = tf.Variable(tf.zeros(20))
+        #CNN3 = tf.Variable(tf.random.truncated_normal([8,8,20,20], stddev=0.1))
+        #CBias3 = tf.Variable(tf.zeros(20))
+        #CNN4 = tf.Variable(tf.random.truncated_normal([4,4,20,80], stddev=0.1))
+        #CBias4 = tf.Variable(tf.zeros(80))
         self.epochs = 12
         self.batch_size = 64
         #bias3 = tf.Variable(tf.zeros([2]))
-        self.trainable_vars = [CNN1, CBias1, CNN2, CBias2, CNN3, CBias3]
     def call(self, inputs, is_testing=False):
         """
         Runs a forward pass on an input batch of images.
@@ -50,30 +52,60 @@ class Model(tf.keras.Model):
         # shape of input = (num_inputs (or batch_size), in_height, in_width, in_channels)
         # shape of filter = (filter_height, filter_width, in_channels, out_channels)
         # shape of strides = (batch_stride, height_stride, width_stride, channels_stride)
-        c1_out = tf.nn.conv2d(inputs, self.trainable_vars[0], strides=2, padding='VALID')
-        c1_out = tf.nn.bias_add(c1_out, self.trainable_vars[1])
+        c1_out = tf.keras.layers.Conv2D(filters=32, kernel_size=(2, 2), activation='relu')(inputs)
         #c1_out = tf.nn.batch_normalization(c1_out)
-        c1_out = tf.nn.relu(c1_out)
-        c1_out = tf.nn.max_pool(c1_out, ksize = 3, strides = 2, padding = "VALID")
-        c2_out = tf.nn.conv2d(c1_out, self.trainable_vars[2], strides=2, padding='VALID')
-        c2_out = tf.nn.bias_add(c2_out, self.trainable_vars[3])
+        c1_out = tf.keras.layers.MaxPool2D(pool_size= (4,4))(c1_out)
+        c1_out = tf.keras.layers.SpatialDropout2D(rate = .1)(c1_out)
+        c2_out = tf.keras.layers.Conv2D(filters=64, kernel_size=(2,2), activation='relu')(c1_out)
         #c2_out = tf.nn.batch_normalization(c2_out)
-        c2_out = tf.nn.relu(c2_out)
-        c2_out = tf.nn.max_pool(c2_out, ksize = 2, strides = 2, padding = "VALID")
-        c3_out = tf.nn.conv2d(c2_out, self.trainable_vars[4], strides=1, padding='VALID')
-        c3_out = tf.nn.bias_add(c3_out, self.trainable_vars[5])
+        c2_out = tf.keras.layers.MaxPool2D(pool_size= (4,4))(c2_out)
+        c2_out = tf.keras.layers.SpatialDropout2D(rate = .1)(c2_out)
+        c3_out = tf.keras.layers.Conv2D(filters=128, kernel_size=(2,2), activation='relu')(c2_out)
         #c3_out = tf.nn.batch_normalization(c3_out)
-        c3_out = tf.nn.relu(c3_out)
+        c3_out = tf.keras.layers.MaxPool2D(pool_size= (2,2))(c3_out)
+        c3_out = tf.keras.layers.SpatialDropout2D(rate = .1)(c3_out)
         #print(c3_out.shape)
-        c4_out = tf.nn.conv2d(c3_out, self.trainable_vars[6], strides = 1, padding = 'VALID')
-        dense_in = tf.reshape(c4_out, [inputs.shape[0], 1680])
+        c4_out = tf.keras.layers.Conv2D(filters=128, kernel_size=(2,2), activation='relu')(c3_out)
+        # c4_out = tf.keras.layers.Conv2D(filters=3, kernel_size=(2, 2), activation='relu')(inputs)
+        # dense_in = tf.reshape(c4_out, [inputs.shape[0], 366795])
+        num_elements = tf.reduce_prod(c4_out.shape[1:])
+        dense_in = tf.reshape(c4_out, [-1, num_elements])
         dense1_out = tf.keras.layers.Dense(512, activation="relu")(dense_in)
-        dense1_out = tf.nn.dropout(dense1_out, rate = 0.1)
+        dense1_out = tf.nn.dropout(dense1_out, rate = 0.25)
         dense2_out = tf.keras.layers.Dense(256, activation = "relu")(dense1_out)
-        dense2_out = tf.nn.dropout(dense2_out, rate = 0.1)
+        dense2_out = tf.nn.dropout(dense2_out, rate = 0.25)
         out = tf.keras.layers.Dense(64)(dense2_out)
         #print(out)
         return tf.keras.layers.Dense(4, activation= "softmax")(out)
+    
+    def loss(self, logits, labels):
+        """
+        Calculates the model cross-entropy loss after one forward pass.
+        Softmax is applied in this function.
+        
+        :param logits: during training, a matrix of shape (batch_size, self.num_classes) 
+        containing the result of multiple convolution and feed forward layers
+        :param labels: during training, matrix of shape (batch_size, self.num_classes) containing the train labels
+        :return: the loss of the model as a Tensor
+        """
+        #ce = tf.nn.softmax_cross_entropy_with_logits(labels, logits)
+        #return tf.reduce_mean(ce)
+        return tf.keras.losses.categorical_crossentropy(labels, logits)
+    def accuracy(self, logits, labels):
+        """
+        Calculates the model's prediction accuracy by comparing
+        logits to correct labels – no need to modify this.
+        
+        :param logits: a matrix of size (num_inputs, self.num_classes); during training, this will be (batch_size, self.num_classes)
+        containing the result of multiple convolution and feed forward layers
+        :param labels: matrix of size (num_labels, self.num_classes) containing the answers, during training, this will be (batch_size, self.num_classes)
+
+        NOTE: DO NOT EDIT
+        
+        :return: the accuracy of the model as a Tensor
+        """
+        correct_predictions = tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1))
+        return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
 
 
 class MultiModalModel(tf.keras.Model):
@@ -181,20 +213,22 @@ def train(model, train_inputs, train_labels):
     '''
     batches = round(len(train_inputs) / model.batch_size)
     acc = 0
+    optimizer = tf.keras.optimizers.legacy.Adam()
     for i in range(batches):
         indicies = tf.random.shuffle(tf.range(start= i*model.batch_size, limit= (i+1)*model.batch_size, dtype=tf.int32))
         shuff = tf.gather(train_inputs, indicies)
         shufflab = tf.gather(train_labels, indicies)
-        shuff = tf.image.random_flip_left_right(shuff)
+
         with tf.GradientTape() as tape:
             pred = model(shuff)
             loss = model.loss(pred, shufflab)
         grads = tape.gradient(loss, model.trainable_variables)
         #print(grads)
         #print(model.trainable_vars)
-        model.optimizer.apply_gradients(zip(grads, model.trainable_variables))
+        optimizer.apply_gradients(zip(grads, model.trainable_variables))
         acc += model.accuracy(pred, shufflab)
     return acc / batches
+
         
 
 
@@ -308,8 +342,10 @@ def main():
 
     #train
     m = Model()
-    inputs, labels = preprocess(LOCAL_TRAIN_FILE) ###change### ###496x248
-    test_inputs, test_labels = preprocess(LOCAL_TEST_FILE) ###change###
+    inputs = load_data('Data/train_data.npy')
+    labels = load_data('Data/train_labels.npy') ###change### ###496x248
+    test_inputs = load_data('Data/test_data.npy')
+    test_labels = load_data('Data/test_labels.npy')
     print(len(test_inputs))
     print(len(test_labels))
     for i in range(0, m.epochs):
