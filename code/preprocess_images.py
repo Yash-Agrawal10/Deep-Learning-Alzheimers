@@ -1,63 +1,8 @@
-# import os
-# import numpy as np
-# import random
-# from keras.preprocessing.image import load_img, img_to_array
-# from sklearn.model_selection import train_test_split
-# from keras.utils import to_categorical
-
-# def load_and_preprocess_images(categories, num_samples):
-#     # Prepare data and labels
-#     data = []
-#     labels = []
-
-#     # Loop through each category
-#     for category_id, category in enumerate(categories):
-#         # Get a list of all images in the category
-#         all_images = [img for img in os.listdir(category) if img.endswith('.jpg')]
-#         # Randomly select num_samples images
-#         selected_images = random.sample(all_images, num_samples)
-
-#         for image_name in selected_images:
-#             # Read the image
-#             image = load_img(os.path.join(category, image_name))
-#             # Convert the image to numpy array
-#             image = img_to_array(image)
-#             # Normalize the image
-#             image = image.astype('float32') / 255.0
-#             # Append the image and its corresponding label to the data and labels list
-#             data.append(image)
-#             labels.append(to_categorical(category_id, num_classes=len(categories)))
-
-#     return np.array(data), np.array(labels)
-
-# def save_data(data, filename):
-#     # Save the preprocessed data
-#     np.save(filename, data)
-
-# def load_data(filename):
-#     # Load the preprocessed data
-#     return np.load(filename)
-
-# # Define categories and number of samples
-# categories = ['Data/Mild Dementia', 'Data/Moderate Dementia', 'Data/Non Demented', 'Data/Very mild Dementia']
-# num_samples = 488
-
-# # Load and preprocess images
-# data, labels = load_and_preprocess_images(categories, num_samples)
-
-# # Split the data into training and testing sets
-# train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=42)
-
-# # Save data
-# save_data(train_data, 'Data/train_data.npy')
-# save_data(train_labels, 'Data/train_labels.npy')
-# save_data(test_data, 'Data/test_data.npy')
-# save_data(test_labels, 'Data/test_labels.npy')
-
 import tensorflow as tf
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Mappings for non-numeric data
 hand_mapping = { 'R': 0, 'L': 1 }
@@ -138,6 +83,7 @@ def make_image_dataset(data_dir):
     image_path_dataset = tf.data.Dataset.list_files(root_data_dir)
     image_dataset = image_path_dataset.map(load_and_preprocess_image)
     shuffled_image_dataset = image_dataset.shuffle(buffer_size=1000)
+
     def filter_dataset(data, label):
         return not tf.reduce_all(tf.equal(label, [0, 0, 0, 0]))
     filtered_image_dataset = shuffled_image_dataset.filter(filter_dataset)
@@ -164,5 +110,3 @@ def inspect_image_dataset(dataset, num_samples=3):
         # plt.imshow(full_image, cmap='gray')
         # plt.show()
     print('Total samples:', count)
-
-# inspect_image_dataset(make_dataset('../data/raw', 128), 100000)
