@@ -156,6 +156,8 @@ def parse_tfrecord(example):
     return (image, metadata), label
 
 def load_dataset(filepath):
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f'File {filepath} not found')
     raw_dataset = tf.data.TFRecordDataset(filepath)
     parsed_dataset = raw_dataset.map(parse_tfrecord)
     return parsed_dataset
