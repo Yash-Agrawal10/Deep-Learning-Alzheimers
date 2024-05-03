@@ -6,6 +6,10 @@ import pandas as pd
 script_dir = os.path.dirname(__file__)
 data_dir = os.path.join(script_dir, '../data')
 
+################################
+# Code to prepare the metadata #
+################################
+
 # Mappings for non-numeric data
 hand_mapping = { 'R': 0, 'L': 1 }
 gender_mapping = { 'M': 0, 'F': 1 }
@@ -15,23 +19,50 @@ label_mapping = {
     'Mild Dementia': 2,
     'Moderate Dementia': 3,
 }
+CDR_mapping = {
+    'Non Demented': 0.0,
+    'Very Mild Dementia': 0.5,
+    'Mild Dementia': 1.0,
+    'Moderate Dementia': 2.0,
+}
 
 # Load CSV
 metadata_path = os.path.join(data_dir, 'raw/demographic_data.csv')
 metadata_df = pd.read_csv(metadata_path)
-metadata_df = metadata_df.drop(columns=['Delay', 'CDR', ])
+metadata_df = metadata_df.drop(columns=['Delay'])
 metadata_df = metadata_df.dropna()
 metadata_df['Hand'] = metadata_df['Hand'].map(hand_mapping)
 metadata_df['M/F'] = metadata_df['M/F'].map(gender_mapping)
+
+# Split data into train, val, and test
+counts = metadata_df['CDR'].value_counts()
+train_counts = counts * 0.7
+train_counts = train_counts.apply(lambda x: int(x))
+test_counts = counts - train_counts
+train_df = pd.DataFrame()
+test_df = pd.DataFrame()
+# Add samples to train, val, and test dataframes
+# Ensuring that there is no overlap between the three sets
+for label in label_mapping.keys():
+    label_df = metadata_df.loc[metadata_df['CDR'] == CDR_mapping[label]]
+    train_df = pd.concat([train_df, label_df.sample(n=int(train_counts[CDR_mapping[label]]), replace=False)])
+    test_df = pd.concat([test_df, label_df.sample(n=int(test_counts[CDR_mapping[label]]), replace=False)])
+
 # Create dictionary for metadata
-metadata_df = metadata_df.set_index('ID')
-metadata_dict = metadata_df.to_dict(orient='index')
+train_df = train_df.set_index('ID')
+train_dict = train_df.to_dict(orient='index')
+test_df = test_df.set_index('ID')
+test_dict = test_df.to_dict(orient='index')
 
 ##################################
 # Code to preprocess the dataset #
 ##################################
 
-def fetch_metadata(image_id):
+def fetch_metadata(image_id, is_train):
+    if tf.equal(is_train, tf.constant([1.0])):
+        metadata_dict = train_dict
+    else:
+        metadata_dict = test_dict
     data = metadata_dict.get(image_id.numpy().decode('utf-8'), None)
     if data is not None:
         out = [float(data['M/F']), float(data['Hand']), float(data['Age']), 
@@ -53,14 +84,14 @@ def fetch_label_index(label):
         valid = [0]
     return out + valid
 
-def load_and_preprocess_image(image_path):
+def load_and_preprocess_image(image_path, is_train):
     valid = True
     # Get ID from image path
     path_parts = tf.strings.split(image_path, os.path.sep)
     filename = path_parts[-1]
     image_id = tf.strings.split(filename, '_mpr')[0]
     # Get metadata for image
-    output = tf.py_function(fetch_metadata, [image_id], [tf.float32] * 10)
+    output = tf.py_function(fetch_metadata, [image_id, is_train], [tf.float32] * 10)
     metadata = output[:-1]
     metadata_valid = output[-1]
     if tf.equal(metadata_valid, tf.constant([0.0])):
@@ -87,10 +118,10 @@ def load_and_preprocess_image(image_path):
     else:
         return (image, tf.concat(metadata, axis=0)), tf.one_hot(-1, depth=len(label_mapping))
 
-def make_dataset():
+def make_dataset(is_train):
     root_data_dir = os.path.join(data_dir, 'raw/*/*.jpg')
     image_path_dataset = tf.data.Dataset.list_files(root_data_dir)
-    image_dataset = image_path_dataset.map(load_and_preprocess_image)
+    image_dataset = image_path_dataset.map(lambda x: load_and_preprocess_image(x, tf.constant([1.0])))
     def filter_dataset(data, label):
             return not tf.reduce_all(tf.equal(label, [0, 0, 0, 0]))
     filtered_dataset = image_dataset.filter(filter_dataset)
@@ -111,9 +142,9 @@ def balance_dataset(dataset, num_of_labels, count):
         balanced_dataset = balanced_dataset.concatenate(data_slice)
     return balanced_dataset
 
-def get_dataset():
-    image_dataset = make_dataset()
-    balanced_dataset = balance_dataset(image_dataset, 4, 484)
+def get_dataset(is_train, count):
+    image_dataset = make_dataset(is_train)
+    balanced_dataset = balance_dataset(image_dataset, 4, count)
     return balanced_dataset
 
 #################################
@@ -156,8 +187,6 @@ def parse_tfrecord(example):
     return (image, metadata), label
 
 def load_dataset(filepath):
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f'File {filepath} not found')
     raw_dataset = tf.data.TFRecordDataset(filepath)
     parsed_dataset = raw_dataset.map(parse_tfrecord)
     return parsed_dataset
@@ -170,27 +199,22 @@ def prepare_dataset(dataset, batch_size, cache=True, shuffle_buffer_size=1000):
     dataset = dataset.cache() if cache else dataset
     dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
     dataset = dataset.batch(batch_size)
-
-    dataset_size = dataset.reduce(0, lambda x, _: x + 1).numpy()
-    train_count = int(0.7 * dataset_size)
-    val_count = int(0.1 * dataset_size)
-    test_count = dataset_size - train_count - val_count
-
-    train_dataset = dataset.take(train_count).prefetch(tf.data.experimental.AUTOTUNE)
-    val_dataset = dataset.skip(train_count).take(val_count).prefetch(tf.data.experimental.AUTOTUNE)
-    test_dataset = dataset.skip(train_count + val_count).take(test_count).prefetch(tf.data.experimental.AUTOTUNE)
-
-    return train_dataset, val_dataset, test_dataset
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    return dataset
 
 ############################################
 # Code to actually create and save dataset #
 ############################################
 
 def main():
-    print('Creating and saving dataset...')
-    dataset = get_dataset()
-    save_dataset(dataset, os.path.join(data_dir, 'processed'))
-    print('Dataset created and saved!')
+    print('Creating and saving train dataset...')
+    dataset = get_dataset(tf.constant([1.0]), int(484 * 0.7))
+    save_dataset(dataset, os.path.join(data_dir, 'processed/train.tfrecord'))
+    print('Train Dataset created and saved!')
+    print('Creating and saving test dataset...')
+    dataset = get_dataset(tf.constant([0.0]), int(484 * 0.3))
+    save_dataset(dataset, os.path.join(data_dir, 'processed/test.tfrecord'))
+    print('Test Dataset created and saved!')
 
 if __name__ == '__main__':
     main()

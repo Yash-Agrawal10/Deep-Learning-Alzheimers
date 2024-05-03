@@ -1,6 +1,7 @@
 # Project Specific
 data
 models
+screenshots
 
 # General Python/Tensorflow Gitignore
 .DS_Store

@@ -19,3 +19,17 @@ def inspect_size(dataset):
         total_count += count
         print('Label:', label, 'Count:', count)
     print('Total count:', total_count)
+
+import tensorflow as tf
+def inspect_groups(dataset, num_samples=2, num_groups=4):
+    print('Inspecting dataset groups...')
+    for i in range(num_groups):
+        print('Group:', i)
+        label = tf.one_hot(i, depth=num_groups)
+        group = dataset.filter(lambda x, y: tf.reduce_all(tf.equal(y, label)))
+        group_sample = group.take(num_samples)
+        for (image, metadata), label in group_sample:
+            print('Image shape:', image.shape)
+            print('Metadata shape:', metadata.shape)
+            print('Metadata:', metadata)
+            print('Label:', label)
