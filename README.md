@@ -1,16 +1,16 @@
 Saved data about various models:
 
 Metadata model - 
-Epochs: 5
-Loss: 5.338
-Accuracy: 47%
+Epochs: 20
+Loss: 1.475
+Accuracy: 30.3%
 
 Image model - 
 Epochs: 10
-Loss: 0.037
-Accuracy: 99.3%
+Loss: 0.612
+Accuracy: 86.0%
 
 Multimodal model - 
-Epochs: 20
-Loss: 0.004
-Accuracy: 100%
+Epochs: 10
+Loss: 0.494
+Accuracy: 85.0%
