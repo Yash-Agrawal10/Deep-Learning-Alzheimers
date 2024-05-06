@@ -11,6 +11,6 @@ Loss: 0.612
 Accuracy: 86.0%
 
 Multimodal model - 
-Epochs: 10
-Loss: 0.494
-Accuracy: 85.0%
+Epochs: 13
+Loss: 0.589
+Accuracy: 86.2%
